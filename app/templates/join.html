@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Join &middot; Bin Run{% endblock %}
+{% block content %}
+<h1>Bin Run</h1>
+<p class="lede">
+  On-demand rubbish collection for the gaps between municipal pickups.
+  Residents post what needs collecting; collectors nearby claim it.
+</p>
+
+<form method="post" action="/join" class="card">
+  <label for="name">What should people call you?</label>
+  <input id="name" name="name" required maxlength="60" autofocus placeholder="Thandi">
+
+  <fieldset>
+    <legend>I'm here to&hellip;</legend>
+    <label class="radio">
+      <input type="radio" name="role" value="resident" checked>
+      <span><strong>Request a pickup</strong><br>I have rubbish that can't wait until Thursday.</span>
+    </label>
+    <label class="radio">
+      <input type="radio" name="role" value="collector">
+      <span><strong>Collect</strong><br>Show me open jobs near me.</span>
+    </label>
+  </fieldset>
+
+  <button type="submit">Start</button>
+  <p class="fineprint">
+    No password. This is a build-week project and anyone with your name can be you.
+  </p>
+</form>
+{% endblock %}

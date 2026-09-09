@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Open jobs &middot; Bin Run{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% endblock %}
+
+{% block content %}
+{% if mine %}
+  <h2>On your list</h2>
+  <ul class="list">
+    {% for p in mine %}
+      <li class="item status-{{ p.status }}">
+        <div class="item-main">
+          <a class="item-title" href="/pickups/{{ p.id }}">{{ p.description }}</a>
+          <p class="item-meta">{{ p.address or 'no address' }} &middot; {{ p.resident_name }}</p>
+        </div>
+        <div class="item-side">
+          <span class="badge">{{ p.status }}</span>
+          {% if p.status == 'claimed' %}
+            <form method="post" action="/pickups/{{ p.id }}/done">
+              <button type="submit">Mark collected</button>
+            </form>
+          {% endif %}
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+
+<h1>Open jobs</h1>
+<p class="lede" id="loc-note">
+  {% if user.lat is none %}
+    Sorted by newest. <button type="button" class="link" id="loc-btn">Use my location</button> to sort by distance.
+  {% else %}
+    Nearest first. <button type="button" class="link" id="loc-btn">Update my location</button>
+  {% endif %}
+</p>
+
+<div id="map"></div>
+
+{% if not jobs %}
+  <p class="lede">Nothing open right now.</p>
+{% else %}
+  <ul class="list">
+    {% for p in jobs %}
+      <li class="item">
+        <div class="item-main">
+          <a class="item-title" href="/pickups/{{ p.id }}">{{ p.description }}</a>
+          <p class="item-meta">
+            {% if p.distance_km is not none %}<strong>{{ p.distance_km }} km</strong> &middot;{% endif %}
+            {% if p.bag_count %}{{ p.bag_count }} bag{{ '' if p.bag_count == 1 else 's' }} &middot;{% endif %}
+            {% if p.size %}{{ p.size }} &middot;{% endif %}
+            {{ p.address or 'no address given' }}
+            {% if not p.geocoded and p.address %}<span class="tag warn">not on map</span>{% endif %}
+          </p>
+          {% if p.when_text %}<p class="item-meta">Wants it: {{ p.when_text }}</p>{% endif %}
+        </div>
+        <div class="item-side">
+          <form method="post" action="/pickups/{{ p.id }}/claim">
+            <button type="submit">Claim</button>
+          </form>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const fallbackCenter = [{{ default_center[0] }}, {{ default_center[1] }}];
+  const me = {lat: {{ user.lat if user.lat is not none else 'null' }},
+              lng: {{ user.lng if user.lng is not none else 'null' }}};
+  const jobs = [
+    {% for p in jobs if p.lat is not none and p.lng is not none %}
+      {id: {{ p.id }}, lat: {{ p.lat }}, lng: {{ p.lng }},
+       label: {{ (p.description ~ ' — ' ~ (p.address or ''))|tojson }}},
+    {% endfor %}
+  ];
+
+  const map = L.map('map').setView(me.lat !== null ? [me.lat, me.lng] : fallbackCenter, 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
+
+  const markers = [];
+  for (const job of jobs) {
+    const m = L.marker([job.lat, job.lng]).addTo(map)
+      .bindPopup(`<a href="/pickups/${job.id}">${job.label}</a>`);
+    markers.push(m);
+  }
+  if (me.lat !== null) {
+    markers.push(L.circleMarker([me.lat, me.lng], {radius: 7}).addTo(map).bindPopup('You'));
+  }
+  if (markers.length > 1) {
+    map.fitBounds(L.featureGroup(markers).getBounds().pad(0.2));
+  }
+
+  document.getElementById('loc-btn')?.addEventListener('click', () => {
+    const note = document.getElementById('loc-note');
+    if (!navigator.geolocation) {
+      note.textContent = 'This browser will not share a location.';
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      await fetch('/me/location', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({lat: pos.coords.latitude, lng: pos.coords.longitude}),
+      });
+      location.reload();
+    }, () => {
+      note.textContent = 'Location denied. Jobs stay sorted by newest.';
+    });
+  });
+</script>
+{% endblock %}

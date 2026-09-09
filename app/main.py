@@ -1,99 +1,393 @@
-"""Routes.
+"""HTTP routes.
 
-Day 1 scope, and nothing more: prove that a row written through this app is
-still there after the host restarts. The `heartbeats` table below is a probe,
-not a feature - delete it on Wednesday once real tables exist.
+Server-rendered forms, no client framework. The only JavaScript that matters
+is the map and the "parse my sentence" fetch, and the app works with both of
+them broken.
+
+Sessions are signed cookies (SessionMiddleware + SECRET_KEY): the cookie
+stores the user id and the server verifies the signature, so a visitor can
+read their own cookie but not mint someone else's without the key.
 """
 
+from __future__ import annotations
+
+import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.status import HTTP_303_SEE_OTHER
 
-from . import db
+from . import config, db, geocode, models, parse
+from .models import ClaimFailed, NotAllowed, User
+
+log = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Runs once on boot, and once on shutdown.
-
-    Everything before `yield` happens as the app starts; everything after
-    happens as it stops. (There is an older `@app.on_event("startup")` style
-    you will see all over the internet - it still works but is deprecated, so
-    this is the current way.)
-
-    Creating the table here is safe to run on every boot because of
-    IF NOT EXISTS: it does nothing on the second and every later start. That
-    property has a name worth knowing - the operation is *idempotent*.
-    """
-    with db.cursor() as cur:
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS heartbeats (
-                id         SERIAL PRIMARY KEY,
-                note       TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            )
-            """
-        )
+    """Migrate on boot so a fresh deploy doesn't need a shell."""
+    version = db.migrate()
+    log.info("database at schema version %s", version)
     yield
 
 
 app = FastAPI(title="Bin Run", docs_url=None, redoc_url=None, lifespan=lifespan)
+app.add_middleware(
+    SessionMiddleware, secret_key=config.secret_key(), max_age=14 * 24 * 3600
+)
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
+SEE_OTHER = HTTP_303_SEE_OTHER
 
-@app.get("/")
+
+# --- session helpers --------------------------------------------------------
+
+
+def current_user(request: Request) -> User | None:
+    user_id = request.session.get("user_id")
+    if user_id is None:
+        return None
+    user = models.get_user(user_id)
+    if user is None:  # the database was reset out from under the cookie
+        request.session.clear()
+    return user
+
+
+def require_user(request: Request) -> User:
+    user = current_user(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Pick a name and a role first.")
+    return user
+
+
+def require_collector(request: Request) -> User:
+    user = require_user(request)
+    if not user.is_collector:
+        raise HTTPException(status_code=403, detail="Only collectors can do that.")
+    return user
+
+
+def require_resident(request: Request) -> User:
+    user = require_user(request)
+    if user.is_collector:
+        raise HTTPException(status_code=403, detail="Only residents can do that.")
+    return user
+
+
+def flash(request: Request, message: str, kind: str = "info") -> None:
+    request.session.setdefault("flashes", []).append({"text": message, "kind": kind})
+
+
+def take_flashes(request: Request) -> list[dict]:
+    return request.session.pop("flashes", [])
+
+
+def render(request: Request, template: str, **context) -> HTMLResponse:
+    user = context.pop("user", None) or current_user(request)
+    return templates.TemplateResponse(
+        request,
+        template,
+        {
+            "user": user,
+            "flashes": take_flashes(request),
+            "default_center": config.DEFAULT_CENTER,
+            **context,
+        },
+    )
+
+
+def redirect(path: str) -> RedirectResponse:
+    return RedirectResponse(path, status_code=SEE_OTHER)
+
+
+def home_for(user: User) -> str:
+    return "/jobs" if user.is_collector else "/requests"
+
+
+# --- errors -----------------------------------------------------------------
+
+
+@app.exception_handler(HTTPException)
+def http_exception_handler(request: Request, exc: HTTPException):
+    if request.headers.get("accept", "").startswith("application/json"):
+        return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+    if exc.status_code == 401:
+        return redirect("/join")
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {
+            "user": current_user(request),
+            "flashes": [],
+            "status": exc.status_code,
+            "detail": exc.detail,
+        },
+        status_code=exc.status_code,
+    )
+
+
+# --- joining ----------------------------------------------------------------
+
+
+@app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    """Read every heartbeat back out.
-
-    This one is done for you as the worked example - the shape of every read in
-    this app is the same three lines: open a cursor, execute, fetch.
-    """
-    with db.cursor() as cur:
-        cur.execute("SELECT id, note, created_at FROM heartbeats ORDER BY id DESC")
-        beats = cur.fetchall()
-
-    return templates.TemplateResponse(request, "index.html", {"beats": beats})
+    user = current_user(request)
+    if user is None:
+        return redirect("/join")
+    return redirect(home_for(user))
 
 
-@app.post("/heartbeat")
-async def add_heartbeat(request: Request):
-    """Write one row, then send the browser back to "/".
+@app.get("/join", response_class=HTMLResponse)
+def join_form(request: Request):
+    user = current_user(request)
+    if user is not None:
+        return redirect(home_for(user))
+    return render(request, "join.html")
 
-    YOUR TURN. Three things to do:
 
-      1. Read the submitted form:  form = await request.form()
-         then form.get("note") for the text the user typed.
+@app.post("/join")
+def join(request: Request, name: str = Form(...), role: str = Form(...)):
+    try:
+        user = models.create_user(name, role)
+    except ValueError as exc:
+        flash(request, str(exc), "error")
+        return redirect("/join")
+    request.session["user_id"] = user.id
+    flash(request, f"You're in as {user.name}, a {user.role}.", "ok")
+    return redirect(home_for(user))
 
-      2. Open a cursor like index() does, and execute an INSERT.
-         Pass the value as a *parameter*, not by building the string:
 
-             cur.execute("INSERT INTO heartbeats (note) VALUES (%s)", (note,))
+@app.post("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return redirect("/join")
 
-         Never f-string a user's input into SQL. Someone types
-         '); DROP TABLE heartbeats;-- and you find out why.
 
-      3. Return RedirectResponse("/", status_code=303).
-         303 tells the browser "go and GET this instead", so a refresh doesn't
-         re-submit the form. Returning the page directly instead of redirecting
-         is a real bug with a name - look up Post/Redirect/Get.
+@app.post("/me/location")
+async def set_location(request: Request):
+    """The browser's geolocation, if the collector shares it."""
+    user = require_user(request)
+    try:
+        payload = await request.json()
+        lat, lng = float(payload["lat"]), float(payload["lng"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="lat and lng must be numbers.")
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise HTTPException(status_code=400, detail="Those aren't real coordinates.")
+    models.set_user_location(user.id, lat, lng)
+    return {"ok": True, "lat": lat, "lng": lng}
 
-    When this works you will have answered learning checkpoint #1: what happens
-    between the browser sending a form and a row existing in the database.
-    """
-    raise NotImplementedError("Write the INSERT - see the docstring above.")
+
+# --- residents --------------------------------------------------------------
+
+
+@app.get("/requests", response_class=HTMLResponse)
+def my_requests(request: Request):
+    user = require_resident(request)
+    return render(
+        request, "requests.html", pickups=models.list_pickups_for_resident(user.id)
+    )
+
+
+@app.get("/new", response_class=HTMLResponse)
+def new_request_form(request: Request):
+    require_resident(request)
+    return render(request, "new.html", draft={})
+
+
+@app.post("/parse")
+async def parse_endpoint(request: Request):
+    """Parse free text into form fields. Always 200 - the form reads `parsed`."""
+    require_resident(request)
+    try:
+        payload = await request.json()
+        text = payload.get("text", "")
+    except Exception:
+        text = ""
+    return dict(parse.parse_free_text(text))
+
+
+@app.post("/pickups")
+def create_pickup(
+    request: Request,
+    description: str = Form(""),
+    bag_count: str = Form(""),
+    size: str = Form(""),
+    address: str = Form(""),
+    when_text: str = Form(""),
+    notes: str = Form(""),
+    raw_text: str = Form(""),
+    parsed: str = Form(""),
+):
+    user = require_resident(request)
+
+    description = description.strip()
+    if not description:
+        flash(request, "Say what needs collecting.", "error")
+        return render(
+            request,
+            "new.html",
+            draft={
+                "description": description,
+                "bag_count": bag_count,
+                "size": size,
+                "address": address,
+                "when_text": when_text,
+                "notes": notes,
+                "raw_text": raw_text,
+            },
+        )
+
+    try:
+        bags = int(bag_count) if bag_count.strip() else None
+    except ValueError:
+        bags = None
+
+    located = geocode.geocode(address)
+
+    pickup_id = models.create_pickup(
+        user.id,
+        description,
+        bag_count=bags,
+        size=size.strip() or None,
+        address=address.strip() or None,
+        when_text=when_text.strip() or None,
+        notes=notes.strip() or None,
+        raw_text=raw_text.strip() or None,
+        parsed=parsed == "1",
+        lat=located.lat,
+        lng=located.lng,
+        geocode_note=located.note,
+    )
+
+    if located.ok:
+        flash(request, "Posted. Collectors nearby can see it now.", "ok")
+    else:
+        flash(
+            request,
+            f"Posted. {located.note or 'We could not place it on the map.'} "
+            "Collectors will still see the address.",
+            "warn",
+        )
+    return redirect(f"/pickups/{pickup_id}")
+
+
+@app.post("/pickups/{pickup_id}/cancel")
+def cancel(request: Request, pickup_id: int):
+    user = require_resident(request)
+    try:
+        models.cancel_pickup(pickup_id, user.id)
+        flash(request, "Request cancelled.", "ok")
+    except NotAllowed as exc:
+        flash(request, str(exc), "error")
+    return redirect("/requests")
+
+
+# --- collectors -------------------------------------------------------------
+
+
+@app.get("/jobs", response_class=HTMLResponse)
+def jobs(request: Request):
+    user = require_collector(request)
+    open_jobs = models.sort_by_distance(models.list_open_pickups(), user.lat, user.lng)
+    return render(
+        request,
+        "jobs.html",
+        jobs=open_jobs,
+        mine=models.list_pickups_for_collector(user.id),
+    )
+
+
+@app.get("/api/jobs.json")
+def jobs_json(request: Request):
+    user = require_collector(request)
+    open_jobs = models.sort_by_distance(models.list_open_pickups(), user.lat, user.lng)
+    return {
+        "me": {"lat": user.lat, "lng": user.lng},
+        "jobs": [
+            {
+                "id": j["id"],
+                "description": j["description"],
+                "address": j["address"],
+                "lat": j["lat"],
+                "lng": j["lng"],
+                "distance_km": j["distance_km"],
+                "size": j["size"],
+                "bag_count": j["bag_count"],
+            }
+            for j in open_jobs
+        ],
+    }
+
+
+@app.post("/pickups/{pickup_id}/claim")
+def claim(request: Request, pickup_id: int):
+    user = require_collector(request)
+    try:
+        models.claim_pickup(pickup_id, user.id)
+        flash(request, "Claimed. It's yours - go get it.", "ok")
+        return redirect(f"/pickups/{pickup_id}")
+    except ClaimFailed as exc:
+        # The losing side of the race lands here. Not an error page: the job
+        # board is exactly where they want to be next.
+        flash(request, str(exc), "warn")
+        return redirect("/jobs")
+
+
+@app.post("/pickups/{pickup_id}/done")
+def done(request: Request, pickup_id: int):
+    user = require_collector(request)
+    try:
+        models.complete_pickup(pickup_id, user.id)
+        flash(request, "Marked collected.", "ok")
+    except NotAllowed as exc:
+        flash(request, str(exc), "error")
+    return redirect(f"/pickups/{pickup_id}")
+
+
+@app.post("/pickups/{pickup_id}/release")
+def release(request: Request, pickup_id: int):
+    user = require_collector(request)
+    try:
+        models.release_pickup(pickup_id, user.id)
+        flash(request, "Released. It's back on the open list.", "ok")
+        return redirect("/jobs")
+    except NotAllowed as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/pickups/{pickup_id}")
+
+
+# --- shared -----------------------------------------------------------------
+
+
+@app.get("/pickups/{pickup_id}", response_class=HTMLResponse)
+def pickup_detail(request: Request, pickup_id: int):
+    user = require_user(request)
+    pickup = models.get_pickup(pickup_id)
+    if pickup is None:
+        raise HTTPException(status_code=404, detail="No pickup with that number.")
+    if user.is_collector:
+        pickup["distance_km"] = (
+            round(models.haversine_km(user.lat, user.lng, pickup["lat"], pickup["lng"]), 2)
+            if None not in (user.lat, user.lng, pickup["lat"], pickup["lng"])
+            else None
+        )
+    return render(request, "pickup.html", pickup=pickup)
 
 
 @app.get("/healthz")
 def healthz():
-    """Cheap liveness check. Also proves the database is reachable, not just
-    that the web process is up - those are different failures."""
+    """Proves the database is reachable, not just that the process is up -
+    those are different failures."""
     with db.cursor() as cur:
-        cur.execute("SELECT 1 AS ok")
-        cur.fetchone()
+        cur.execute("SELECT 1 AS ok").fetchone()
     return {"ok": True}

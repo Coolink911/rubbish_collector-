@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Pickup #{{ pickup.id }} &middot; Bin Run{% endblock %}
+{% block head %}
+{% if pickup.geocoded %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">{% endif %}
+{% endblock %}
+
+{% block content %}
+<p class="crumb"><a href="{{ '/jobs' if user.is_collector else '/requests' }}">&larr; back</a></p>
+
+<h1>{{ pickup.description }}</h1>
+<p class="lede">
+  <span class="badge">{{ pickup.status }}</span>
+  posted by {{ pickup.resident_name }}
+  {% if pickup.collector_name %} &middot; {{ pickup.collector_name }} is on it{% endif %}
+  {% if pickup.distance_km is defined and pickup.distance_km is not none %} &middot; {{ pickup.distance_km }} km away{% endif %}
+</p>
+
+<dl class="facts">
+  {% if pickup.bag_count %}<dt>Bags</dt><dd>{{ pickup.bag_count }}</dd>{% endif %}
+  {% if pickup.size %}<dt>Size</dt><dd>{{ pickup.size }}</dd>{% endif %}
+  <dt>Address</dt>
+  <dd>
+    {{ pickup.address or 'Not given' }}
+    {% if pickup.address and not pickup.geocoded %}
+      <br><span class="tag warn">{{ pickup.geocode_note or 'Not placed on the map.' }}</span>
+    {% endif %}
+  </dd>
+  {% if pickup.when_text %}<dt>When</dt><dd>{{ pickup.when_text }}</dd>{% endif %}
+  {% if pickup.notes %}<dt>Notes</dt><dd>{{ pickup.notes }}</dd>{% endif %}
+  <dt>Posted</dt><dd>{{ pickup.created_at }} UTC</dd>
+  {% if pickup.claimed_at %}<dt>Claimed</dt><dd>{{ pickup.claimed_at }} UTC</dd>{% endif %}
+  {% if pickup.completed_at %}<dt>Collected</dt><dd>{{ pickup.completed_at }} UTC</dd>{% endif %}
+</dl>
+
+{% if pickup.raw_text %}
+  <details class="card">
+    <summary>What the resident actually typed</summary>
+    <p class="raw">{{ pickup.raw_text }}</p>
+    <p class="fineprint">Parsed into fields: {{ 'yes' if pickup.parsed else 'no' }}.</p>
+  </details>
+{% endif %}
+
+{% if pickup.geocoded %}<div id="map"></div>{% endif %}
+
+<div class="actions">
+  {% if user.is_collector %}
+    {% if pickup.status == 'open' %}
+      <form method="post" action="/pickups/{{ pickup.id }}/claim">
+        <button type="submit">Claim this job</button>
+      </form>
+    {% elif pickup.status == 'claimed' and pickup.collector_id == user.id %}
+      <form method="post" action="/pickups/{{ pickup.id }}/done">
+        <button type="submit">Mark collected</button>
+      </form>
+      <form method="post" action="/pickups/{{ pickup.id }}/release">
+        <button type="submit" class="link">can't do it &mdash; release</button>
+      </form>
+    {% endif %}
+  {% elif pickup.resident_id == user.id and pickup.status == 'open' %}
+    <form method="post" action="/pickups/{{ pickup.id }}/cancel">
+      <button type="submit" class="link">cancel this request</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if pickup.geocoded %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([{{ pickup.lat }}, {{ pickup.lng }}], 16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
+  L.marker([{{ pickup.lat }}, {{ pickup.lng }}]).addTo(map);
+</script>
+{% endif %}
+{% endblock %}

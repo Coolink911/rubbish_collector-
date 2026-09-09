@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}New pickup &middot; Bin Run{% endblock %}
+{% block content %}
+<h1>What needs collecting?</h1>
+
+<form class="card" id="quick">
+  <label for="freetext">Say it in a sentence</label>
+  <textarea id="freetext" rows="3"
+    placeholder="3 bags of garden cuttings and a broken chair, 14 Rosmead Ave, any time tomorrow morning"></textarea>
+  <button type="button" id="parse-btn">Fill the form from this</button>
+  <p class="fineprint" id="parse-note">Optional. The form below is the real thing &mdash; you can type straight into it.</p>
+</form>
+
+<form method="post" action="/pickups" class="card">
+  <input type="hidden" name="raw_text" id="raw_text" value="{{ draft.raw_text or '' }}">
+  <input type="hidden" name="parsed" id="parsed" value="0">
+
+  <label for="description">What is it? <span class="req">required</span></label>
+  <input id="description" name="description" required maxlength="500"
+         value="{{ draft.description or '' }}" placeholder="Garden cuttings and a broken chair">
+
+  <div class="row">
+    <div>
+      <label for="bag_count">Bags</label>
+      <input id="bag_count" name="bag_count" type="number" min="1" max="200"
+             value="{{ draft.bag_count or '' }}">
+    </div>
+    <div>
+      <label for="size">Size</label>
+      <select id="size" name="size">
+        <option value="">&mdash;</option>
+        {% for s in ['small', 'medium', 'large'] %}
+          <option value="{{ s }}" {% if draft.size == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <label for="address">Address</label>
+  <input id="address" name="address" maxlength="500" value="{{ draft.address or '' }}"
+         placeholder="14 Rosmead Ave, Kenilworth">
+  <p class="fineprint">If we can't find it on the map the pickup still posts &mdash; collectors read the address.</p>
+
+  <label for="when_text">When suits you?</label>
+  <input id="when_text" name="when_text" maxlength="500" value="{{ draft.when_text or '' }}"
+         placeholder="Tomorrow morning">
+
+  <label for="notes">Anything a collector should know?</label>
+  <textarea id="notes" name="notes" rows="2" maxlength="500"
+            placeholder="Bags are behind the green gate, dog is friendly">{{ draft.notes or '' }}</textarea>
+
+  <button type="submit">Post it</button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const btn = document.getElementById('parse-btn');
+  const note = document.getElementById('parse-note');
+
+  btn.addEventListener('click', async () => {
+    const text = document.getElementById('freetext').value.trim();
+    if (!text) return;
+    btn.disabled = true;
+    note.textContent = 'Reading that…';
+
+    try {
+      const res = await fetch('/parse', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text}),
+      });
+      const data = await res.json();
+
+      const set = (id, value) => {
+        if (value !== null && value !== undefined && value !== '') {
+          document.getElementById(id).value = value;
+        }
+      };
+      set('description', data.description);
+      set('bag_count', data.bag_count);
+      set('size', data.size);
+      set('address', data.address);
+      set('when_text', data.when_text);
+      set('notes', data.notes);
+      document.getElementById('raw_text').value = text;
+      document.getElementById('parsed').value = data.parsed ? '1' : '0';
+
+      note.textContent = data.parsed
+        ? 'Filled in below. Check it — correct anything that’s wrong.'
+        : (data.parse_note || 'Couldn’t structure that. Your text is in the description; edit as needed.');
+    } catch (err) {
+      note.textContent = 'Couldn’t reach the parser. Fill the form in yourself.';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+{% endblock %}

@@ -4,15 +4,38 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Bin Run{% endblock %}</title>
-  <style>
-    /* Deliberately almost nothing. CSS is Saturday, if there is time. */
-    body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem;
-           margin: 2rem auto; padding: 0 1rem; }
-    li { margin: 0.3rem 0; }
-    .meta { color: #666; font-size: 0.875rem; }
-  </style>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
 </head>
 <body>
-  {% block content %}{% endblock %}
+  <header class="bar">
+    <a class="brand" href="/">Bin&nbsp;Run</a>
+    {% if user %}
+      <nav>
+        {% if user.is_collector %}
+          <a href="/jobs">Open jobs</a>
+        {% else %}
+          <a href="/requests">My requests</a>
+          <a href="/new">New pickup</a>
+        {% endif %}
+      </nav>
+      <form class="whoami" method="post" action="/logout">
+        <span>{{ user.name }} <em>{{ user.role }}</em></span>
+        <button type="submit" class="link">switch</button>
+      </form>
+    {% endif %}
+  </header>
+
+  <main>
+    {% for f in flashes %}
+      <p class="flash flash-{{ f.kind }}">{{ f.text }}</p>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    <p>Build Week, September 2026. Municipal trucks still come on Thursdays.</p>
+  </footer>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}My requests &middot; Bin Run{% endblock %}
+{% block content %}
+<h1>My requests</h1>
+
+{% if not pickups %}
+  <p class="lede">Nothing posted yet. <a href="/new">Request a pickup</a>.</p>
+{% else %}
+  <ul class="list">
+    {% for p in pickups %}
+      <li class="item status-{{ p.status }}">
+        <div class="item-main">
+          <a class="item-title" href="/pickups/{{ p.id }}">{{ p.description }}</a>
+          <p class="item-meta">
+            {% if p.bag_count %}{{ p.bag_count }} bag{{ '' if p.bag_count == 1 else 's' }} &middot;{% endif %}
+            {% if p.size %}{{ p.size }} &middot;{% endif %}
+            {{ p.address or 'no address' }}
+            {% if not p.geocoded and p.address %}<span class="tag warn">not on map</span>{% endif %}
+          </p>
+          {% if p.status == 'claimed' %}
+            <p class="item-meta">{{ p.collector_name }} is collecting this.</p>
+          {% endif %}
+        </div>
+        <div class="item-side">
+          <span class="badge">{{ p.status }}</span>
+          {% if p.status == 'open' %}
+            <form method="post" action="/pickups/{{ p.id }}/cancel">
+              <button type="submit" class="link">cancel</button>
+            </form>
+          {% endif %}
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+{% endblock %}

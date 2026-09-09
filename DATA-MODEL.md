@@ -1,44 +1,57 @@
 # Data model - working notes
 
-Day 1. Answer these before writing any schema. Prose is fine; this is thinking,
-not documentation. It gets tidied into ARCHITECTURE.md on Sunday.
+The day-1 questions, with the answers the schema ended up giving. Kept as
+process notes; the tidied version lives in ARCHITECTURE.md.
 
 ## 1. What tables exist?
 
-You need people and pickups at minimum.
+`users`, `pickups`, `geocode_cache`, `schema_version`.
 
-- Is a collector a different table from a resident, or the same table with a
-  `role` column? What does each choice cost you later?
-- Does a claim live as columns *on* the pickup row, or in its own `claims`
-  table? Both work. Write down how each one fails.
+One `users` table with a `role` column, not two tables. Two tables would
+duplicate every column and make "who is user 7" a two-table question; the
+cost of one table is that a resident's lat/lng columns sit empty. Cheap.
 
-## 2. What are the legal statuses of a pickup?
+The claim lives as columns **on the pickup row** (`collector_id`,
+`claimed_at`), not in a separate `claims` table. How each fails: columns on
+the row can't remember history (who claimed and released it before), and a
+separate table can represent two live claims for one pickup unless you add a
+partial unique index - which is exactly the bug this project exists to
+prevent, so the representation that *can't express* the bug won. If claim
+history ever matters, that's an events table appended on the side, not a
+redesign.
 
-List them. Then draw the arrows between them - which transitions are allowed,
-and which are nonsense?
+## 2. Legal statuses and transitions
 
-    open ──▶ ? ──▶ ?
-      │
-      ▼
-      ?
+    open ──claim──▶ claimed ──done──▶ done
+     │ ▲               │
+     │ └───release─────┘
+     └─cancel─▶ cancelled
 
-Which transitions can a *resident* trigger? Which can a *collector* trigger?
+Resident triggers: cancel (only while open). Collector triggers: claim,
+release, done (only their own claim). Nothing leaves `done` or `cancelled`.
 
-## 3. What changes when a pickup is claimed?
+## 3. What changes on a claim?
 
-Name every column that moves, and what it moves from and to.
+Three columns, one statement: `status` open->claimed, `collector_id`
+NULL->the winner, `claimed_at` NULL->now (UTC, written by the app).
 
-## 4. The one that matters
+## 4. What stops two collectors owning one pickup?
 
-**What stops a pickup ending up with two collectors?**
+First instinct (written down before building, as instructed): read the
+pickup, check it's open, then write the claim.
 
-Write down your first instinct now, even if you think it's wrong. Then answer
-this: if your instinct is "the code checks whether it's still open before
-assigning it" - what happens when two requests run that check at the same
-instant, before either of them has written anything?
+What's wrong with it: between the read and the write the world can change.
+Two requests both read 'open', both pass the check, both write; the slower
+write silently wins and one collector drives to a job that isn't theirs.
 
-Don't solve it today. Thursday is for it. But the gap between what you write
-here and what you end up building is a LOG.md entry, and you can't reconstruct
-it later.
+What was built instead: the check *is* the write -
 
-## Notes to self
+    UPDATE pickups SET status='claimed', collector_id=?, claimed_at=?
+     WHERE id=? AND status='open'
+
+rowcount 1 = won, 0 = someone got there first. The database serialises
+writers, so there is no gap for the world to change in. A CHECK constraint
+(claimed/done must have a collector, open/cancelled must not) backstops any
+future code that forgets the rule.
+
+The gap between the instinct and the answer is written up in LOG.md.

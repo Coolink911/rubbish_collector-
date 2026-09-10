@@ -125,8 +125,9 @@ checklist.
   problem I've solved before, and the learning budget went on concurrency.
   Adding it is a password hash, a unique index on name, and a login route —
   nothing else in this document changes.
-- **No notifications** — reload the page. Push/SMS/email all cost money or
-  accounts.
+- **No push/SMS/email** — they cost money or accounts. The requests page
+  polls its own status snapshot (20s) and reloads only on change, which is
+  the honest free version of a notification.
 - **No payment, rating, or dispute flow.** The app believes the collector.
 - **No pagination.**
 - **Sessions are signed cookies.** The cookie holds the user id; the

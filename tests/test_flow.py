@@ -258,3 +258,73 @@ def test_a_stale_session_does_not_crash(client):
 
 def test_healthz(client):
     assert client.get("/healthz").json() == {"ok": True}
+
+
+# --- the friday polish: ticks, polling snapshot, access log -----------------
+
+
+def test_the_status_snapshot_matches_reality(client, db_file):
+    from app.main import app
+
+    from .conftest import make_client
+
+    client.post("/join", data={"name": "Thandi", "role": "resident"})
+    client.post("/pickups", data={"description": "Broken chair"})
+    pickup_id = models.list_open_pickups()[0]["id"]
+
+    snap = client.get("/api/requests.json").json()["requests"]
+    assert snap == [{"id": pickup_id, "status": "open"}]
+
+    collector = make_client(app, "Sipho", "collector")
+    collector.post(f"/pickups/{pickup_id}/claim")
+
+    # This changing is exactly what makes the requests page reload itself.
+    snap = client.get("/api/requests.json").json()["requests"]
+    assert snap == [{"id": pickup_id, "status": "claimed"}]
+
+
+def test_the_snapshot_is_resident_only_and_private(client, db_file):
+    from app.main import app
+
+    from .conftest import make_client
+
+    client.post("/join", data={"name": "Thandi", "role": "resident"})
+    client.post("/pickups", data={"description": "Broken chair"})
+
+    collector = make_client(app, "Sipho", "collector")
+    assert collector.get("/api/requests.json").status_code == 403
+
+    other = make_client(app, "Zanele", "resident")
+    assert other.get("/api/requests.json").json()["requests"] == []
+
+
+def test_status_ticks_render(client, db_file):
+    from app.main import app
+
+    from .conftest import make_client
+
+    client.post("/join", data={"name": "Thandi", "role": "resident"})
+    client.post("/pickups", data={"description": "Broken chair"})
+    pickup_id = models.list_open_pickups()[0]["id"]
+
+    assert "ticks-open" in client.get("/requests").text
+
+    collector = make_client(app, "Sipho", "collector")
+    collector.post(f"/pickups/{pickup_id}/claim")
+    collector.post(f"/pickups/{pickup_id}/done")
+    assert "ticks-done" in client.get("/requests").text
+
+
+def test_requests_are_logged_with_status_and_timing(client, caplog):
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="binrun.access"):
+        client.get("/join")
+    lines = [r.getMessage() for r in caplog.records if r.name == "binrun.access"]
+    assert any("GET /join -> 200 in" in line for line in lines)
+
+    # The healthcheck stays quiet at INFO so a log tail is mostly signal.
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="binrun.access"):
+        client.get("/healthz")
+    assert not [r for r in caplog.records if r.name == "binrun.access"]

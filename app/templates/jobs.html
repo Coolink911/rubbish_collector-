@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import ticks %}
 {% block title %}Open jobs &middot; Bin Run{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -15,7 +16,7 @@
           <p class="item-meta">{{ p.address or 'no address' }} &middot; {{ p.resident_name }}</p>
         </div>
         <div class="item-side">
-          <span class="badge">{{ p.status }}</span>
+          <span class="badge">{{ ticks(p.status) }} {{ p.status }}</span>
           {% if p.status == 'claimed' %}
             <form method="post" action="/pickups/{{ p.id }}/done">
               <button type="submit">Mark collected</button>

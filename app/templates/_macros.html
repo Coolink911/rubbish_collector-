@@ -1,0 +1,11 @@
+{#- WhatsApp-style status ticks, mapped to a pickup's lifecycle:
+      open      ✓    posted, waiting for a collector
+      claimed   ✓✓   a collector has it
+      done      ✓✓   collected (accent colour, like the blue ticks)
+      cancelled ✕
+    The badge next to it carries the word; this carries the glance. -#}
+{% macro ticks(status) -%}
+<span class="ticks ticks-{{ status }}" aria-hidden="true">
+  {%- if status == 'open' -%}&#10003;{%- elif status == 'cancelled' -%}&#10005;{%- else -%}&#10003;&#10003;{%- endif -%}
+</span>
+{%- endmacro %}

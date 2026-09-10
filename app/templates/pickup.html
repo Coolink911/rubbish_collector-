@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import ticks %}
 {% block title %}Pickup #{{ pickup.id }} &middot; Bin Run{% endblock %}
 {% block head %}
 {% if pickup.geocoded %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">{% endif %}
@@ -9,7 +10,7 @@
 
 <h1>{{ pickup.description }}</h1>
 <p class="lede">
-  <span class="badge">{{ pickup.status }}</span>
+  <span class="badge">{{ ticks(pickup.status) }} {{ pickup.status }}</span>
   posted by {{ pickup.resident_name }}
   {% if pickup.collector_name %} &middot; {{ pickup.collector_name }} is on it{% endif %}
   {% if pickup.distance_km is defined and pickup.distance_km is not none %} &middot; {{ pickup.distance_km }} km away{% endif %}

@@ -88,7 +88,8 @@ self-match.
    on Postgres, then delete the SQLite path and the dual-engine wrapper.
 2. Real accounts — password hash, unique names, login — so returning
    tomorrow doesn't make a second me.
-3. Notifications (even just email) instead of reload-to-find-out.
+3. Real notifications (email at least) instead of the 20-second polling
+   the requests page does now.
 4. A bounding box in SQL before the haversine in Python, and pagination.
 5. An events table so a pickup's claim/release history survives, instead of
    being overwritten in place.

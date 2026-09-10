@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import ticks %}
 {% block title %}My requests &middot; Bin Run{% endblock %}
 {% block content %}
 <h1>My requests</h1>
@@ -22,7 +23,7 @@
           {% endif %}
         </div>
         <div class="item-side">
-          <span class="badge">{{ p.status }}</span>
+          <span class="badge">{{ ticks(p.status) }} {{ p.status }}</span>
           {% if p.status == 'open' %}
             <form method="post" action="/pickups/{{ p.id }}/cancel">
               <button type="submit" class="link">cancel</button>
@@ -33,4 +34,28 @@
     {% endfor %}
   </ul>
 {% endif %}
+<p class="fineprint" id="live-note">Updates by itself when a collector claims or collects something.</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Poll the status snapshot and reload only when something changed. Cheap,
+  // boring, and honest about being polling - see "cut on purpose" in README.
+  const snapshot = JSON.stringify([
+    {% for p in pickups %}[{{ p.id }}, {{ p.status|tojson }}],{% endfor %}
+  ].sort((a, b) => a[0] - b[0]));
+
+  async function check() {
+    if (document.visibilityState !== 'visible') return;
+    try {
+      const res = await fetch('/api/requests.json', {headers: {accept: 'application/json'}});
+      if (!res.ok) return;
+      const data = await res.json();
+      const now = JSON.stringify(data.requests.map(r => [r.id, r.status]).sort((a, b) => a[0] - b[0]));
+      if (now !== snapshot) location.reload();
+    } catch (e) { /* offline is fine; try again next tick */ }
+  }
+  setInterval(check, 20000);
+  document.addEventListener('visibilitychange', check);
+</script>
 {% endblock %}

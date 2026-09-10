@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -47,6 +48,26 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), na
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 SEE_OTHER = HTTP_303_SEE_OTHER
+
+# One line per request. Not structured JSON logging - at this scale a line a
+# human can read in the Space's log tail beats a line a log platform we don't
+# have could query. Static files and the healthcheck log at DEBUG so the tail
+# stays mostly signal.
+access_log = logging.getLogger("binrun.access")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    ms = (time.perf_counter() - start) * 1000
+    quiet = request.url.path.startswith("/static") or request.url.path == "/healthz"
+    access_log.log(
+        logging.DEBUG if quiet else logging.INFO,
+        "%s %s -> %s in %.1fms",
+        request.method, request.url.path, response.status_code, ms,
+    )
+    return response
 
 
 # --- session helpers --------------------------------------------------------
@@ -196,6 +217,20 @@ def my_requests(request: Request):
     return render(
         request, "requests.html", pickups=models.list_pickups_for_resident(user.id)
     )
+
+
+@app.get("/api/requests.json")
+def requests_json(request: Request):
+    """Status snapshot for the resident's own requests. The requests page
+    polls this and reloads itself only when something actually changed -
+    the free-tier answer to push notifications."""
+    user = require_resident(request)
+    return {
+        "requests": [
+            {"id": p["id"], "status": p["status"]}
+            for p in models.list_pickups_for_resident(user.id)
+        ]
+    }
 
 
 @app.get("/new", response_class=HTMLResponse)

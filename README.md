@@ -95,7 +95,7 @@ SIDE-QUEST.md    # the tool-I-didn't-use write-up
 **Cut, on purpose:**
 
 - **Passwords.** Every "join" creates a new user; returning tomorrow makes a second you. Authentication is a solved problem I've done before — the week's learning budget went on concurrency.
-- **Notifications.** The resident finds out by reloading.
+- **Push/email notifications.** Instead, the requests page polls a status snapshot every 20s and reloads itself when a collector claims or collects - the free-tier version of finding out.
 - **Payment, ratings, disputes.** A collector says a job is done and the app believes them.
 - **Pagination.** The job board loads every open pickup.
 

@@ -157,6 +157,13 @@ button.link:hover { color: var(--accent); filter: none; }
 .status-claimed .badge { background: var(--ok-bg); color: var(--accent); }
 
 .tag { font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 4px; }
+
+/* WhatsApp-style lifecycle ticks: one grey = posted, two grey = claimed,
+   two green = collected, cross = cancelled */
+.ticks { font-weight: 700; letter-spacing: -0.14em; margin-right: 0.15em; }
+.ticks-open, .ticks-claimed { color: var(--muted); }
+.ticks-done { color: var(--accent); }
+.ticks-cancelled { color: var(--error); }
 .tag.warn { background: var(--warn-bg); color: var(--warn); }
 
 /* detail */

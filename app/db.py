@@ -217,6 +217,14 @@ def _migrations() -> list[list[str]]:
             )
             """,
         ],
+        # 4 - moderation verdict kept on the row: clear/review/block never
+        # reach here for 'block' (refused before insert); 'review' is a
+        # paper trail until an admin screen exists; 'skipped' says honestly
+        # that no check ran (no key, or the checker failed open).
+        [
+            "ALTER TABLE pickups ADD COLUMN moderation TEXT",
+            "ALTER TABLE pickups ADD COLUMN moderation_note TEXT",
+        ],
     ]
 
 

@@ -96,6 +96,8 @@ def create_pickup(
     lat: float | None = None,
     lng: float | None = None,
     geocode_note: str | None = None,
+    moderation: str | None = None,
+    moderation_note: str | None = None,
 ) -> int:
     description = (description or "").strip()
     if not description:
@@ -108,16 +110,17 @@ def create_pickup(
                 resident_id, description, bag_count, size, address, when_text,
                 window_start, window_end,
                 notes, raw_text, parsed, lat, lng, geocoded, geocode_note,
+                moderation, moderation_note,
                 status, created_at
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                      %s, 'open', %s)
+                      %s, %s, %s, 'open', %s)
             RETURNING id
             """,
             (
                 resident_id, description, bag_count, size, address, when_text,
                 window_start, window_end,
                 notes, raw_text, 1 if parsed else 0, lat, lng, geocoded,
-                geocode_note, _now(),
+                geocode_note, moderation, moderation_note, _now(),
             ),
         ).fetchone()
         return int(row["id"])

@@ -24,7 +24,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.status import HTTP_303_SEE_OTHER
 
-from . import config, db, geocode, models, parse
+from . import config, db, geocode, models, moderate, parse
 from .models import ClaimFailed, NotAllowed, User
 
 log = logging.getLogger(__name__)
@@ -321,6 +321,24 @@ def create_pickup(
     except ValueError:
         bags = None
 
+    verdict = moderate.moderate(description, notes, when_text, address)
+    if verdict.risk == moderate.BLOCK:
+        flash(
+            request,
+            f"That can't be posted: {verdict.reason or 'it does not look like a rubbish pickup.'} "
+            "Nothing was saved - edit it below.",
+            "error",
+        )
+        return render(
+            request,
+            "new.html",
+            draft={
+                "description": description, "bag_count": bag_count,
+                "size": size, "address": address, "when_text": when_text,
+                "notes": notes, "raw_text": raw_text,
+            },
+        )
+
     located = geocode.geocode(address)
 
     pickup_id = models.create_pickup(
@@ -340,6 +358,8 @@ def create_pickup(
         lat=located.lat,
         lng=located.lng,
         geocode_note=located.note,
+        moderation=verdict.risk,
+        moderation_note=verdict.reason,
     )
 
     photo_b64, photo_note = _read_photo(photo)

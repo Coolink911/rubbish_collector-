@@ -84,6 +84,10 @@ self-match.
 
 ## What I'd do with another week
 
+0. Ship the deploy that was designed but never went live: HF Space +
+   Neon, restart-tested on the real host. The brief's rule 6 is an
+   either/or and the clean clone carries the submission, but a URL an
+   examiner can tap was the original plan and the week ran out first.
 1. Point `TEST_DATABASE_URL` at a Neon branch in CI so the race is *proven*
    on Postgres, then delete the SQLite path and the dual-engine wrapper.
 2. Real accounts — password hash, unique names, login — so returning

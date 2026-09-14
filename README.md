@@ -24,13 +24,15 @@ Things that are *not* new to me and that I'm reusing rather than claiming: Pytho
 
 ## Run it
 
-Deployed at: `TODO — Space url` *(HF Space, Docker SDK, with `DATABASE_URL` pointing at a free Neon Postgres set as a Space secret — see `Dockerfile`)*
-
-Or locally, from a clean clone, **no accounts or keys needed**:
+**How to run it: from a clean clone** (the brief's rule 6 offers deploy *or*
+clean clone — this project ships the clean-clone path, and it needs **no
+accounts or keys**). A deploy design exists — HF Space via `Dockerfile`,
+state in a free Neon Postgres because the Space's disk is wiped on restart —
+but the week ended before it went live; see `LOG.md`.
 
 ```bash
-git clone TODO
-cd "rubbish app"
+git clone https://github.com/Coolink911/rubbish_collector-.git
+cd rubbish_collector-
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
@@ -51,6 +53,19 @@ To see the interesting part, open the app in two browser windows (one normal, on
 | `GEOCODE_ENABLED` | no | set `0` to skip address lookups entirely; addresses stay as text |
 
 Nothing here costs money. Geocoding is OpenStreetMap's Nominatim (free, rate-limited to 1 req/s — results are cached partly for that reason); hosting is a free Space plus Neon's free tier, chosen because Neon wakes automatically on the next query instead of pausing until someone logs into a dashboard.
+
+## Verify it in one command
+
+```bash
+./.claude/skills/run-bin-run/smoke.sh
+```
+
+A committed smoke driver (`.claude/skills/run-bin-run/`) executes the whole
+argument of the project as one scripted flow against a throwaway database:
+boot + migrate, post a pickup with the geocoder down, race two concurrent
+claims (exactly one winner), restart the process and find the claim still
+standing, mark it collected. Prints PASS or the failing step in ~5 seconds,
+and bootstraps its own venv on a clean clone.
 
 ## Tests
 
@@ -99,4 +114,8 @@ SIDE-QUEST.md    # the tool-I-didn't-use write-up
 - **Payment, ratings, disputes.** A collector says a job is done and the app believes them.
 - **Pagination.** The job board loads every open pickup.
 
-**Still to do before Monday:** the deploy itself (Space + Neon secret + a real restart test on the host), the demo recording, and the side quest.
+**Cut, out of time:** the live deploy. The design for it is done (Dockerfile,
+stateless host, Neon) and documented in `ARCHITECTURE.md`; the hours it needed
+on Monday morning went to verification and documentation instead. The
+supported way to run this project is the clean clone above — which the smoke
+driver proves works from zero.

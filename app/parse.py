@@ -26,7 +26,10 @@ from . import config
 
 log = logging.getLogger(__name__)
 
-FIELDS = ("description", "bag_count", "size", "address", "when_text", "notes")
+FIELDS = (
+    "description", "bag_count", "size", "address", "when_text", "notes",
+    "window_start", "window_end",
+)
 SIZES = ("small", "medium", "large")
 
 MAX_INPUT_CHARS = 2000
@@ -41,6 +44,10 @@ Rules:
 - size: small (fits in one bag), medium (a few bags), or large (furniture, rubble, a bakkie load). Null if unclear.
 - address: the street address, if stated. Null otherwise.
 - when_text: when they want it collected, copied in their own words. Null otherwise.
+- window_start / window_end: that same wish as concrete local datetimes, format
+  YYYY-MM-DDTHH:MM, computed from the "today is" line in the message ("tomorrow
+  morning" -> next day 08:00 to 12:00). Null when they gave no time at all.
+  Never invent a window they didn't imply.
 - notes: access details a collector needs (gate codes, dogs, "behind the wall"). Null otherwise."""
 
 
@@ -57,6 +64,8 @@ def fallback(raw_text: str, note: str) -> ParseResult:
         address=None,
         when_text=None,
         notes=None,
+        window_start=None,
+        window_end=None,
         raw_text=raw_text,
         parsed=False,
         parse_note=note,
@@ -90,6 +99,27 @@ def _clean_int(value: Any) -> int | None:
             n = int(match.group())
             return n if 0 < n <= 200 else None
     return None
+
+
+def _clean_datetime(value: Any) -> str | None:
+    """Accept only something datetime-shaped; normalise to YYYY-MM-DD HH:MM.
+
+    The model is asked for ISO 8601, but this also survives a space instead
+    of the T, trailing seconds, and of course prose like "tomorrow-ish".
+    """
+    from datetime import datetime
+
+    if not isinstance(value, str):
+        return None  # a bare number like 20260915 must not become a date
+    text = _clean_str(value)
+    # Demand date AND time in extended form: fromisoformat alone happily
+    # parses "20260915" (basic ISO) into midnight on a real day.
+    if text is None or not re.match(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}", text):
+        return None
+    try:
+        return datetime.fromisoformat(text.replace(" ", "T")).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
 
 
 def _clean_size(value: Any) -> str | None:
@@ -137,6 +167,11 @@ def coerce(payload: Any, raw_text: str) -> ParseResult:
     if description is None:
         return fallback(raw_text, "The parser left out what to collect, so I kept your text as-is.")
 
+    window_start = _clean_datetime(payload.get("window_start"))
+    window_end = _clean_datetime(payload.get("window_end"))
+    if window_start and window_end and window_end <= window_start:
+        window_end = None  # a backwards window is no window
+
     return ParseResult(
         description=description,
         bag_count=_clean_int(payload.get("bag_count")),
@@ -144,6 +179,8 @@ def coerce(payload: Any, raw_text: str) -> ParseResult:
         address=_clean_str(payload.get("address")),
         when_text=_clean_str(payload.get("when_text")),
         notes=_clean_str(payload.get("notes")),
+        window_start=window_start,
+        window_end=window_end,
         raw_text=raw_text,
         parsed=True,
         parse_note=None,
@@ -167,13 +204,18 @@ def _request(text: str) -> Any:
         address: str | None = None
         when_text: str | None = None
         notes: str | None = None
+        window_start: str | None = None
+        window_end: str | None = None
 
+    from datetime import datetime
+
+    today = datetime.now().strftime("%A %Y-%m-%d %H:%M")
     client = anthropic.Anthropic(api_key=config.anthropic_api_key())
     response = client.with_options(timeout=20.0).messages.parse(
         model=config.anthropic_model(),
         max_tokens=2048,
         system=SYSTEM,
-        messages=[{"role": "user", "content": text}],
+        messages=[{"role": "user", "content": f"(Today is {today}.)\n\n{text}"}],
         output_config={"effort": "low"},
         output_format=PickupFields,
     )

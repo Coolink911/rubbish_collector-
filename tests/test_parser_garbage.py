@@ -72,7 +72,7 @@ def test_invented_fields_are_ignored_not_stored():
     assert result["parsed"] is True
     assert set(result) == {
         "description", "bag_count", "size", "address", "when_text",
-        "notes", "raw_text", "parsed", "parse_note",
+        "notes", "window_start", "window_end", "raw_text", "parsed", "parse_note",
     }
     assert "urgency" not in result
 
@@ -183,3 +183,30 @@ def test_over_long_input_is_truncated_before_it_is_sent(db_file, monkeypatch):
 
     parse.parse_free_text("bags " * 2000)
     assert len(seen["text"]) <= parse.MAX_INPUT_CHARS
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("2026-09-15T09:00", "2026-09-15 09:00"),
+        ("2026-09-15 09:00:30", "2026-09-15 09:00"),
+        ("tomorrow morning", None),
+        ("whenever suits", None),
+        ("2026-09-15", None),  # date without a time is not a window
+        ("20260915", None),    # basic-ISO trap: fromisoformat parses this
+        (20260915, None), (None, None),
+    ],
+)
+def test_windows_only_survive_if_datetime_shaped(value, expected):
+    result = parse.coerce({"description": "Bags", "window_start": value}, RAW)
+    assert result["window_start"] == expected
+
+
+def test_a_backwards_window_keeps_start_and_drops_end():
+    result = parse.coerce(
+        {"description": "Bags",
+         "window_start": "2026-09-15T12:00", "window_end": "2026-09-15T09:00"},
+        RAW,
+    )
+    assert result["window_start"] == "2026-09-15 12:00"
+    assert result["window_end"] is None

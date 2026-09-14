@@ -328,3 +328,19 @@ def test_requests_are_logged_with_status_and_timing(client, caplog):
     with caplog.at_level(logging.INFO, logger="binrun.access"):
         client.get("/healthz")
     assert not [r for r in caplog.records if r.name == "binrun.access"]
+
+
+def test_tampered_window_fields_are_cleaned_not_stored(client):
+    """The hidden inputs come from the parser, but any browser can edit them."""
+    client.post("/join", data={"name": "Thandi", "role": "resident"})
+    client.post(
+        "/pickups",
+        data={
+            "description": "Bags",
+            "window_start": "'); DROP TABLE pickups;--",
+            "window_end": "2026-09-15T12:00",
+        },
+    )
+    p = models.list_open_pickups()[0]
+    assert p["window_start"] is None
+    assert p["window_end"] == "2026-09-15 12:00"

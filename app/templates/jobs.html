@@ -54,7 +54,7 @@
             {{ p.address or 'no address given' }}
             {% if not p.geocoded and p.address %}<span class="tag warn">not on map</span>{% endif %}
           </p>
-          {% if p.when_text %}<p class="item-meta">Wants it: {{ p.when_text }}</p>{% endif %}
+          {% if p.when_text %}<p class="item-meta">Wants it: {{ p.when_text }}{% if p.window_start %} <span class="tag">{{ p.window_start }}{% if p.window_end %} &rarr; {{ p.window_end }}{% endif %}</span>{% endif %}</p>{% endif %}
         </div>
         <div class="item-side">
           <form method="post" action="/pickups/{{ p.id }}/claim">

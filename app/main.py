@@ -259,6 +259,8 @@ def create_pickup(
     size: str = Form(""),
     address: str = Form(""),
     when_text: str = Form(""),
+    window_start: str = Form(""),
+    window_end: str = Form(""),
     notes: str = Form(""),
     raw_text: str = Form(""),
     parsed: str = Form(""),
@@ -296,6 +298,10 @@ def create_pickup(
         size=size.strip() or None,
         address=address.strip() or None,
         when_text=when_text.strip() or None,
+        # Hidden fields the parser filled - but forms are editable by anyone
+        # with devtools, so they go through the same cleaner as model output.
+        window_start=parse._clean_datetime(window_start),
+        window_end=parse._clean_datetime(window_end),
         notes=notes.strip() or None,
         raw_text=raw_text.strip() or None,
         parsed=parsed == "1",

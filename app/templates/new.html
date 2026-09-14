@@ -14,6 +14,8 @@
 <form method="post" action="/pickups" class="card">
   <input type="hidden" name="raw_text" id="raw_text" value="{{ draft.raw_text or '' }}">
   <input type="hidden" name="parsed" id="parsed" value="0">
+  <input type="hidden" name="window_start" id="window_start" value="">
+  <input type="hidden" name="window_end" id="window_end" value="">
 
   <label for="description">What is it? <span class="req">required</span></label>
   <input id="description" name="description" required maxlength="500"
@@ -82,6 +84,8 @@
       set('size', data.size);
       set('address', data.address);
       set('when_text', data.when_text);
+      set('window_start', data.window_start);
+      set('window_end', data.window_end);
       set('notes', data.notes);
       document.getElementById('raw_text').value = text;
       document.getElementById('parsed').value = data.parsed ? '1' : '0';

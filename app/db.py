@@ -195,6 +195,14 @@ def _migrations() -> list[list[str]]:
             )
             """,
         ],
+        # 2 - structured collection windows, parsed from "tomorrow morning".
+        # Stored as naive local wall-clock strings (YYYY-MM-DD HH:MM) on
+        # purpose: residents and collectors share one city and one clock,
+        # and pretending we have timezone handling we don't would be worse.
+        [
+            "ALTER TABLE pickups ADD COLUMN window_start TEXT",
+            "ALTER TABLE pickups ADD COLUMN window_end TEXT",
+        ],
     ]
 
 

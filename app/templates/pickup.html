@@ -26,7 +26,7 @@
       <br><span class="tag warn">{{ pickup.geocode_note or 'Not placed on the map.' }}</span>
     {% endif %}
   </dd>
-  {% if pickup.when_text %}<dt>When</dt><dd>{{ pickup.when_text }}</dd>{% endif %}
+  {% if pickup.when_text %}<dt>When</dt><dd>{{ pickup.when_text }}{% if pickup.window_start %}<br><span class="fineprint">{{ pickup.window_start }}{% if pickup.window_end %} &rarr; {{ pickup.window_end }}{% endif %} (local)</span>{% endif %}</dd>{% endif %}
   {% if pickup.notes %}<dt>Notes</dt><dd>{{ pickup.notes }}</dd>{% endif %}
   <dt>Posted</dt><dd>{{ pickup.created_at }} UTC</dd>
   {% if pickup.claimed_at %}<dt>Claimed</dt><dd>{{ pickup.claimed_at }} UTC</dd>{% endif %}

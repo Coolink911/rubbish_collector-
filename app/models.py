@@ -88,6 +88,8 @@ def create_pickup(
     size: str | None = None,
     address: str | None = None,
     when_text: str | None = None,
+    window_start: str | None = None,
+    window_end: str | None = None,
     notes: str | None = None,
     raw_text: str | None = None,
     parsed: bool = False,
@@ -104,14 +106,16 @@ def create_pickup(
             """
             INSERT INTO pickups (
                 resident_id, description, bag_count, size, address, when_text,
+                window_start, window_end,
                 notes, raw_text, parsed, lat, lng, geocoded, geocode_note,
                 status, created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                      'open', %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                      %s, 'open', %s)
             RETURNING id
             """,
             (
                 resident_id, description, bag_count, size, address, when_text,
+                window_start, window_end,
                 notes, raw_text, 1 if parsed else 0, lat, lng, geocoded,
                 geocode_note, _now(),
             ),

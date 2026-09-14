@@ -48,7 +48,8 @@ To see the interesting part, open the app in two browser windows (one normal, on
 | --- | --- | --- |
 | `DATABASE_URL` | locally no; **on the deployed host yes** | falls back to `./data/binrun.db` (SQLite). Fine on a laptop; a fail on a host whose filesystem resets, which is why the Space points this at Neon |
 | `SECRET_KEY` | no | a committed default signs the session cookie — fine locally, not in public |
-| `ANTHROPIC_API_KEY` | no | the free-text parser is skipped; requests still submit with manually entered fields |
+| `ANTHROPIC_API_KEY` | no | the parser and photo analyser fall back: first to a local Ollama model if one answers, else to manually entered fields |
+| `OLLAMA_URL` / `OLLAMA_MODEL` | no | defaults to `http://127.0.0.1:11434` / `llama3.2`; `OLLAMA_ENABLED=0` turns the local rung off. Must be a genuinely local model — `*:cloud` ones are paywalled |
 | `NOMINATIM_USER_AGENT` | no | a default is used, but OSM asks that you set your own |
 | `GEOCODE_ENABLED` | no | set `0` to skip address lookups entirely; addresses stay as text |
 

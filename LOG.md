@@ -98,6 +98,27 @@ self-match.
 5. An events table so a pickup's claim/release history survives, instead of
    being overwritten in place.
 
+## After the deadline
+
+Monday afternoon, with the submission in: the four researched "another
+week" items went in as post-deadline commits (windows, photo + vision,
+moderation, Ollama fallback), each tested. Three catches worth keeping:
+
+- **The free local model wasn't free.** The only model installed in my
+  Ollama was `minimax-m3:cloud` — which answers "requires a subscription
+  or usage credits". A cloud-routed model wearing local clothes; rule 8
+  caught it at the last fence. A genuinely local qwen2.5:0.5b (~400MB)
+  then parsed a real sentence perfectly, gate code and all.
+- **The test suite went from 3s to 19s and that WAS the bug.** Parser
+  tests that set a fake API key were letting the new moderation pass make
+  real, retrying network calls to Anthropic. The slowness was the only
+  symptom; the suite was quietly no longer network-free. Fixed with an
+  autouse stub.
+- **`datetime.fromisoformat("20260915")` parses.** Basic ISO format: a
+  stray integer became midnight on a real date. The window cleaner now
+  demands date-and-time shape. Found by a test, kept as a parametrized
+  case.
+
 ## What I still don't understand about my own project
 
 <!-- COLLINS: this section only counts if it's true. Keep what is, cut what

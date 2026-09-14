@@ -20,6 +20,17 @@ it's a genuine either/or against the Anthropic API used in `app/parse.py`.
    and warm?
 3. (10 min) Write the half page below. Delete these instructions.
 
+## Measured in the live session (Mon 14 Sep) - raw material, not the verdict
+
+- `minimax-m3:cloud` (the one model already installed): refused -
+  "requires a subscription or usage credits". Cloud-routed, not local,
+  not free. Rule 8 would have been violated by using it.
+- `qwen2.5:0.5b` (~400MB pull, fully local): given the app's real system
+  prompt and format=json, correctly extracted description, bag_count=3,
+  size=medium, the full address, "tomorrow morning", and the gate code
+  into notes, in one shot. Wired in as the parser's no-key fallback
+  (`app/parse.py`, `_ollama_request`) with an attribution note.
+
 ## Would I switch? (half a page, yours)
 
 - What it did better:

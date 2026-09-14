@@ -11,13 +11,14 @@ read their own cookie but not mint someone else's without the key.
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -208,6 +209,25 @@ async def set_location(request: Request):
     return {"ok": True, "lat": lat, "lng": lng}
 
 
+def _read_photo(photo: UploadFile | None) -> tuple[str, str] | tuple[None, str | None]:
+    """Validate an uploaded photo. Returns (b64, mime) or (None, reason).
+
+    A bad photo is never a reason to lose the pickup - callers post without
+    it and tell the resident why.
+    """
+    if photo is None or not (photo.filename or "").strip():
+        return None, None
+    mime = (photo.content_type or "").lower()
+    if mime not in models.PHOTO_MIMES:
+        return None, "That file isn't a photo I can read (JPEG/PNG/WebP/GIF)."
+    data = photo.file.read(models.PHOTO_MAX_BYTES + 1)
+    if len(data) > models.PHOTO_MAX_BYTES:
+        return None, "That photo is over 1 MB - the pickup posted without it."
+    if not data:
+        return None, None
+    return base64.standard_b64encode(data).decode("ascii"), mime
+
+
 # --- residents --------------------------------------------------------------
 
 
@@ -251,6 +271,17 @@ async def parse_endpoint(request: Request):
     return dict(parse.parse_free_text(text))
 
 
+@app.post("/parse-photo")
+def parse_photo_endpoint(request: Request, photo: UploadFile | None = File(None)):
+    """Photo -> form fields. Always 200; the form reads `parsed`, exactly
+    like the text parser."""
+    require_resident(request)
+    photo_b64, note = _read_photo(photo)
+    if not photo_b64:
+        return dict(parse.fallback("", note or "No photo received."))
+    return dict(parse.analyze_photo(photo_b64, photo.content_type.lower()))
+
+
 @app.post("/pickups")
 def create_pickup(
     request: Request,
@@ -264,6 +295,7 @@ def create_pickup(
     notes: str = Form(""),
     raw_text: str = Form(""),
     parsed: str = Form(""),
+    photo: UploadFile | None = File(None),
 ):
     user = require_resident(request)
 
@@ -309,6 +341,12 @@ def create_pickup(
         lng=located.lng,
         geocode_note=located.note,
     )
+
+    photo_b64, photo_note = _read_photo(photo)
+    if photo_b64:
+        models.attach_photo(pickup_id, photo.content_type.lower(), photo_b64)
+    elif photo_note:
+        flash(request, photo_note, "warn")
 
     if located.ok:
         flash(request, "Posted. Collectors nearby can see it now.", "ok")
@@ -423,6 +461,19 @@ def pickup_detail(request: Request, pickup_id: int):
             else None
         )
     return render(request, "pickup.html", pickup=pickup)
+
+
+@app.get("/pickups/{pickup_id}/photo")
+def pickup_photo(request: Request, pickup_id: int):
+    require_user(request)  # photos are for participants, not the open web
+    photo = models.get_photo(pickup_id)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="No photo on that pickup.")
+    return Response(
+        content=base64.standard_b64decode(photo["data_b64"]),
+        media_type=photo["mime"],
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @app.get("/healthz")

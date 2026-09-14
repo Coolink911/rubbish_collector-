@@ -223,6 +223,68 @@ def _request(text: str) -> Any:
     return parsed.model_dump() if parsed is not None else None
 
 
+VISION_PROMPT = """This photo shows rubbish a resident wants collected. Fill the
+fields from what you can actually see: description (what the pile is), bag_count
+(bags/bin-sized items you can count), size (small: fits one bag; medium: a few
+bags; large: furniture, rubble, a bakkie load), notes (anything a collector
+should know before driving out - heavy items, hazards, access). Leave address
+and the time fields null - a photo doesn't know those. Never invent."""
+
+
+def _vision_request(image_b64: str, media_type: str) -> Any:
+    """One vision call with the same structured-output schema. Raises on any
+    failure; analyze_photo degrades."""
+    import anthropic
+    from pydantic import BaseModel
+
+    class PickupFields(BaseModel):
+        description: str
+        bag_count: int | None = None
+        size: str | None = None
+        notes: str | None = None
+
+    client = anthropic.Anthropic(api_key=config.anthropic_api_key())
+    response = client.with_options(timeout=30.0).messages.parse(
+        model=config.anthropic_model(),
+        max_tokens=2048,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image",
+                 "source": {"type": "base64", "media_type": media_type,
+                            "data": image_b64}},
+                {"type": "text", "text": VISION_PROMPT},
+            ],
+        }],
+        output_config={"effort": "low"},
+        output_format=PickupFields,
+    )
+    parsed = response.parsed_output
+    return parsed.model_dump() if parsed is not None else None
+
+
+def analyze_photo(image_b64: str, media_type: str) -> ParseResult:
+    """Photo -> the same six fields. Total function - never raises.
+
+    Runs through the same coerce() as the text parser, so an invented field
+    or a bag count of "several" dies in exactly the same place.
+    """
+    if not config.anthropic_api_key():
+        return fallback("", "No ANTHROPIC_API_KEY set - describe it yourself.")
+    try:
+        payload = _vision_request(image_b64, media_type)
+    except Exception as exc:  # noqa: BLE001 - deliberately total
+        log.warning("photo analysis failed: %s", exc, exc_info=True)
+        return fallback("", _describe_error(exc))
+    result = coerce(payload, raw_text="")
+    # A photo cannot know where or when; never let the model claim it does.
+    result["address"] = None
+    result["when_text"] = None
+    result["window_start"] = None
+    result["window_end"] = None
+    return result
+
+
 def parse_free_text(text: str) -> ParseResult:
     """Structure a resident's free text. Total function - never raises."""
     raw = (text or "").strip()

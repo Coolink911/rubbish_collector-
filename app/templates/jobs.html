@@ -45,6 +45,9 @@
   <ul class="list">
     {% for p in jobs %}
       <li class="item">
+        {% if p.has_photo %}
+          <a href="/pickups/{{ p.id }}"><img class="thumb" src="/pickups/{{ p.id }}/photo" alt="" loading="lazy"></a>
+        {% endif %}
         <div class="item-main">
           <a class="item-title" href="/pickups/{{ p.id }}">{{ p.description }}</a>
           <p class="item-meta">

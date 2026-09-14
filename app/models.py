@@ -126,7 +126,8 @@ def create_pickup(
 _PICKUP_SELECT = """
     SELECT p.*,
            r.name AS resident_name,
-           c.name AS collector_name
+           c.name AS collector_name,
+           EXISTS(SELECT 1 FROM photos ph WHERE ph.pickup_id = p.id) AS has_photo
     FROM pickups p
     JOIN users r ON r.id = p.resident_id
     LEFT JOIN users c ON c.id = p.collector_id
@@ -174,6 +175,31 @@ def list_pickups_for_collector(collector_id: int) -> list[dict[str, Any]]:
             """,
             (collector_id,),
         ).fetchall()
+
+
+# --- photos -----------------------------------------------------------------
+
+PHOTO_MIMES = ("image/jpeg", "image/png", "image/webp", "image/gif")
+PHOTO_MAX_BYTES = 1_000_000  # keep Neon's free 500MB honest
+
+
+def attach_photo(pickup_id: int, mime: str, data_b64: str) -> None:
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO photos (pickup_id, mime, data_b64) VALUES (%s, %s, %s)
+            ON CONFLICT(pickup_id) DO UPDATE SET
+                mime = excluded.mime, data_b64 = excluded.data_b64
+            """,
+            (pickup_id, mime, data_b64),
+        )
+
+
+def get_photo(pickup_id: int) -> dict[str, Any] | None:
+    with db.cursor() as cur:
+        return cur.execute(
+            "SELECT mime, data_b64 FROM photos WHERE pickup_id = %s", (pickup_id,)
+        ).fetchone()
 
 
 # --- the state transitions --------------------------------------------------

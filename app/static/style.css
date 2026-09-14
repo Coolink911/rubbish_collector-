@@ -175,6 +175,10 @@ button.link:hover { color: var(--accent); filter: none; }
 .actions { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
 .actions form { margin: 0; }
 
+img.photo { max-width: 100%; border-radius: var(--radius); border: 1px solid var(--line); margin: 0 0 1.5rem; }
+img.thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+input[type="file"] { font-size: 0.875rem; }
+
 #map { height: 320px; border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 1.5rem; }
 
 footer { border-top: 1px solid var(--line); padding: 1rem 1.25rem; color: var(--muted); font-size: 0.8125rem; }

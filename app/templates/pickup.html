@@ -41,6 +41,10 @@
   </details>
 {% endif %}
 
+{% if pickup.has_photo %}
+  <img class="photo" src="/pickups/{{ pickup.id }}/photo" alt="Photo of the rubbish" loading="lazy">
+{% endif %}
+
 {% if pickup.geocoded %}<div id="map"></div>{% endif %}
 
 <div class="actions">

@@ -203,6 +203,20 @@ def _migrations() -> list[list[str]]:
             "ALTER TABLE pickups ADD COLUMN window_start TEXT",
             "ALTER TABLE pickups ADD COLUMN window_end TEXT",
         ],
+        # 3 - one optional photo per pickup. Its own table, not columns on
+        # pickups: list queries do SELECT p.* and must never drag a megabyte
+        # of base64 along for every row on the job board. Base64 TEXT rather
+        # than a blob so both engines store it identically, and the DB (not
+        # the host filesystem, which is wiped on restart) is what persists it.
+        [
+            """
+            CREATE TABLE photos (
+                pickup_id  INTEGER PRIMARY KEY REFERENCES pickups(id),
+                mime       TEXT NOT NULL,
+                data_b64   TEXT NOT NULL
+            )
+            """,
+        ],
     ]
 
 

@@ -11,11 +11,17 @@
   <p class="fineprint" id="parse-note">Optional. The form below is the real thing &mdash; you can type straight into it.</p>
 </form>
 
-<form method="post" action="/pickups" class="card">
+<form method="post" action="/pickups" class="card" enctype="multipart/form-data">
   <input type="hidden" name="raw_text" id="raw_text" value="{{ draft.raw_text or '' }}">
   <input type="hidden" name="parsed" id="parsed" value="0">
   <input type="hidden" name="window_start" id="window_start" value="">
   <input type="hidden" name="window_end" id="window_end" value="">
+
+  <label for="photo">Photo of the pile</label>
+  <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+  <p class="fineprint">Optional, max 1&nbsp;MB. Collectors decide whether a job is worth the
+    drive by looking at it. <button type="button" class="link" id="photo-btn">Fill the form from the photo</button>
+    <span id="photo-note"></span></p>
 
   <label for="description">What is it? <span class="req">required</span></label>
   <input id="description" name="description" required maxlength="500"
@@ -59,6 +65,39 @@
 <script>
   const btn = document.getElementById('parse-btn');
   const note = document.getElementById('parse-note');
+
+  const photoBtn = document.getElementById('photo-btn');
+  const photoNote = document.getElementById('photo-note');
+  const fill = (data) => {
+    const set = (id, value) => {
+      if (value !== null && value !== undefined && value !== '') {
+        document.getElementById(id).value = value;
+      }
+    };
+    set('description', data.description);
+    set('bag_count', data.bag_count);
+    set('size', data.size);
+    set('notes', data.notes);
+  };
+
+  photoBtn.addEventListener('click', async () => {
+    const file = document.getElementById('photo').files[0];
+    if (!file) { photoNote.textContent = 'Choose a photo first.'; return; }
+    photoBtn.disabled = true;
+    photoNote.textContent = 'Looking at it…';
+    try {
+      const body = new FormData();
+      body.append('photo', file);
+      const res = await fetch('/parse-photo', {method: 'POST', body});
+      const data = await res.json();
+      if (data.parsed) { fill(data); photoNote.textContent = 'Filled in — check it.'; }
+      else { photoNote.textContent = data.parse_note || 'Couldn’t read that photo.'; }
+    } catch (e) {
+      photoNote.textContent = 'Couldn’t reach the analyser.';
+    } finally {
+      photoBtn.disabled = false;
+    }
+  });
 
   btn.addEventListener('click', async () => {
     const text = document.getElementById('freetext').value.trim();

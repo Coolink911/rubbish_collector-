@@ -32,6 +32,7 @@ def db_file(tmp_path, monkeypatch):
         )
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     monkeypatch.setenv("GEOCODE_ENABLED", "0")
+    monkeypatch.setenv("OLLAMA_ENABLED", "0")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
     from app import db

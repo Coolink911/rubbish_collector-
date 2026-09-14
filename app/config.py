@@ -78,5 +78,17 @@ def geocode_enabled() -> bool:
     return os.environ.get("GEOCODE_ENABLED", "1") not in ("0", "false", "no")
 
 
+def ollama_enabled() -> bool:
+    return os.environ.get("OLLAMA_ENABLED", "1") not in ("0", "false", "no")
+
+
+def ollama_url() -> str:
+    return os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
+
+
+def ollama_model() -> str:
+    return os.environ.get("OLLAMA_MODEL", "llama3.2")
+
+
 # Cape Town city bowl. Only used to centre an empty map.
 DEFAULT_CENTER = (-33.9249, 18.4241)

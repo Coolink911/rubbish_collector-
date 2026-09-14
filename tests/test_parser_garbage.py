@@ -210,3 +210,55 @@ def test_a_backwards_window_keeps_start_and_drops_end():
     )
     assert result["window_start"] == "2026-09-15 12:00"
     assert result["window_end"] is None
+
+
+# --- the local rung of the ladder: Ollama ----------------------------------
+
+
+def test_with_no_key_a_local_model_answers(db_file, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OLLAMA_ENABLED", "1")
+    monkeypatch.setattr(
+        parse, "_ollama_request",
+        lambda text: '{"description": "Garden cuttings", "bag_count": 3}',
+    )
+    result = parse.parse_free_text(RAW)
+    assert result["parsed"] is True
+    assert result["bag_count"] == 3
+    assert "Ollama" in result["parse_note"]  # transparency about which brain
+
+
+def test_a_local_model_answering_in_prose_falls_back(db_file, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OLLAMA_ENABLED", "1")
+    monkeypatch.setattr(
+        parse, "_ollama_request",
+        lambda text: "Sounds like you have some garden cuttings there!",
+    )
+    result = parse.parse_free_text(RAW)
+    assert result["parsed"] is False
+    assert result["description"] == RAW
+
+
+def test_ollama_down_degrades_to_type_it_yourself(db_file, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OLLAMA_ENABLED", "1")
+
+    def refused(text):
+        raise ConnectionError("connection refused")
+
+    monkeypatch.setattr(parse, "_ollama_request", refused)
+    result = parse.parse_free_text(RAW)
+    assert result["parsed"] is False
+    assert "no local model answered" in result["parse_note"]
+
+
+def test_the_anthropic_key_outranks_the_local_model(db_file, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-not-real")
+    monkeypatch.setenv("OLLAMA_ENABLED", "1")
+    monkeypatch.setattr(parse, "_request", lambda text: {"description": "From the API"})
+    monkeypatch.setattr(
+        parse, "_ollama_request",
+        lambda text: pytest.fail("must not fall through to Ollama when a key exists"),
+    )
+    assert parse.parse_free_text(RAW)["description"] == "From the API"

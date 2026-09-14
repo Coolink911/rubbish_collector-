@@ -285,29 +285,86 @@ def analyze_photo(image_b64: str, media_type: str) -> ParseResult:
     return result
 
 
+def _ollama_request(text: str) -> Any:
+    """The same extraction, via a local model on Ollama. Raises on failure.
+
+    Returns whatever the model wrote as its message content - usually a JSON
+    string, since we ask for format=json - and coerce() treats it with the
+    same suspicion as everything else. Local models answer in prose or wrap
+    JSON in fences far more often than the API does; that is exactly the
+    garbage path the coerce tests already cover.
+    """
+    import json as _json
+    from datetime import datetime
+
+    import httpx2 as httpx
+
+    today = datetime.now().strftime("%A %Y-%m-%d %H:%M")
+    response = httpx.post(
+        config.ollama_url().rstrip("/") + "/api/chat",
+        json={
+            "model": config.ollama_model(),
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0},
+            "messages": [
+                {"role": "system", "content": SYSTEM
+                 + "\nAnswer ONLY with a JSON object holding exactly these keys: "
+                 + ", ".join(FIELDS) + "."},
+                {"role": "user", "content": f"(Today is {today}.)\n\n{text}"},
+            ],
+        },
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload.get("message", {}).get("content")
+
+
 def parse_free_text(text: str) -> ParseResult:
-    """Structure a resident's free text. Total function - never raises."""
+    """Structure a resident's free text. Total function - never raises.
+
+    Backend chain: Anthropic API when a key is set; otherwise a local model
+    via Ollama when one answers; otherwise the resident types it themselves.
+    Rule 8 in miniature - the paid path is optional, the free path is real,
+    and no path can block the submission. (Photos skip the local rung: the
+    default local model has no vision.)
+    """
     raw = (text or "").strip()
     if not raw:
         return fallback(raw, "Nothing to parse.")
     if len(raw) > MAX_INPUT_CHARS:
         raw = raw[:MAX_INPUT_CHARS]
 
-    if not config.anthropic_api_key():
-        return fallback(raw, "No ANTHROPIC_API_KEY set - fill the fields in yourself.")
+    if config.anthropic_api_key():
+        try:
+            payload = _request(raw)
+        except ImportError:
+            log.info("anthropic package not installed; skipping parse")
+            return fallback(raw, "The parser isn't installed here - fill the fields in yourself.")
+        except Exception as exc:  # noqa: BLE001 - deliberately total
+            # _describe_error has the specific chain; nothing about a parser
+            # failure may stop a pickup being requested.
+            log.warning("free-text parse failed: %s", exc, exc_info=True)
+            return fallback(raw, _describe_error(exc))
+        return coerce(payload, raw)
 
-    try:
-        payload = _request(raw)
-    except ImportError:
-        log.info("anthropic package not installed; skipping parse")
-        return fallback(raw, "The parser isn't installed here - fill the fields in yourself.")
-    except Exception as exc:  # noqa: BLE001 - deliberately total
-        # _describe_error has the specific chain; nothing about a parser
-        # failure may stop a pickup being requested.
-        log.warning("free-text parse failed: %s", exc, exc_info=True)
-        return fallback(raw, _describe_error(exc))
+    if config.ollama_enabled():
+        try:
+            payload = _ollama_request(raw)
+        except Exception as exc:  # noqa: BLE001 - deliberately total
+            log.info("local parse unavailable (%s)", exc)
+            return fallback(
+                raw,
+                "No ANTHROPIC_API_KEY set and no local model answered - "
+                "fill the fields in yourself.",
+            )
+        result = coerce(payload, raw)
+        if result["parsed"]:
+            result["parse_note"] = f"Parsed locally by {config.ollama_model()} via Ollama."
+        return result
 
-    return coerce(payload, raw)
+    return fallback(raw, "No ANTHROPIC_API_KEY set - fill the fields in yourself.")
 
 
 def _describe_error(exc: Exception) -> str:

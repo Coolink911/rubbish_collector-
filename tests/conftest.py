@@ -44,6 +44,18 @@ def db_file(tmp_path, monkeypatch):
         db.drop_all()
 
 
+@pytest.fixture(autouse=True)
+def _no_real_moderation(monkeypatch):
+    """No test may reach api.anthropic.com. Tests that set a fake
+    ANTHROPIC_API_KEY for the parser were silently letting the moderation
+    pass make real (failing, retrying, 16-second) network calls. Default
+    every posting to 'clear'; moderation tests override with their own
+    monkeypatch, which wins because it runs after this one."""
+    from app import moderate
+
+    monkeypatch.setattr(moderate, "_request", lambda text: {"risk": "clear"})
+
+
 @pytest.fixture
 def client(db_file):
     from app.main import app
